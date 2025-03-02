@@ -16,17 +16,17 @@ from app.utils.http import RequestUtils
 
 class MTeamDiscover(_PluginBase):
     # 插件名称
-    plugin_name = "M-Team探索"
+    plugin_name = "馒头探索"
     # 插件描述
-    plugin_desc = "让探索支持M-Team的数据浏览。"
+    plugin_desc = "让探索支持馒头的数据浏览。"
     # 插件图标
     plugin_icon = "MTeam.png"
     # 插件版本
     plugin_version = "1.0"
     # 插件作者
-    plugin_author = "jxxghp"
+    plugin_author = "kinaxng"
     # 作者主页
-    author_url = "https://github.com/jxxghp"
+    author_url = "https://github.com/kinaxng"
     # 插件配置项ID前缀
     plugin_config_prefix = "mteamdiscover_"
     # 加载顺序
