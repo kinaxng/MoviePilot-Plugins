@@ -41,15 +41,15 @@ class MTeamDiscover(_PluginBase):
     _username = None
     _password = None
     _cookie = None
-
     def init_plugin(self, config: dict = None):
+        logger.info("初始化馒头探索插件...")
         if config:
             self._enabled = config.get("enabled")
             self._proxy = config.get("proxy")
             self._username = config.get("username")
             self._password = config.get("password")
             self._cookie = config.get("cookie")
-
+        logger.info(f"馒头探索插件初始化完成，启用状态: {self._enabled}")
     def get_state(self) -> bool:
         return self._enabled
 
