@@ -1,10 +1,10 @@
 {
-    "mteamdiscover": {
+    "MTeamDiscover": {
         "name": "馒头探索",
         "description": "让探索支持馒头的数据浏览。",
         "labels": "探索",
         "version": "1.0",
-        "icon": "MTeam.png.png",
+        "icon": "MTeam.png",
         "author": "kinaxng",
         "level": 1,
         "history": {
