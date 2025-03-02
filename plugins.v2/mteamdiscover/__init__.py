@@ -543,8 +543,8 @@ class MTeamDiscover(_PluginBase):
             return
         event_data: DiscoverSourceEventData = event.event_data
         mteam_source = schemas.DiscoverMediaSource(
-            name="M-Team",
-            mediaid_prefix="mteam",
+            name="馒头",
+            mediaid_prefix="mteamdiscover",
             api_path=f"plugin/MTeamDiscover/mteam_discover?apikey={settings.API_TOKEN}",
             filter_params={
                 "category": 0,
