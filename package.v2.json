@@ -124,7 +124,7 @@
     "level": 2,
     "history": {
       "v1.10.2": "增加保留原标签和原分类的选项",
-      "v1.10.1": "优化“立即运行一次”按钮位置",
+      "v1.10.1": "优化"立即运行一次"按钮位置",
       "v1.10": "支持跳过校验（仅支持 qBittorrent）",
       "v1.9": "优化执行周期输入，需要MoviePilot v2.2.1+",
       "v1.8": "支持qbittorrent 5",
@@ -465,5 +465,25 @@
     "history": {
       "v1.0": "新增LexiAnnot"
     }
+  },
+  "tvdbdiscover": {
+    "name": "TheTVDB探索",
+    "description": "让探索支持TheTVDB的数据浏览。",
+    "version": "1.1",
+    "author": "jxxghp",
+    "icon": "TheTVDB_A.png",
+    "url": "https://github.com/jxxghp",
+    "order": 99,
+    "auth_level": 1
+  },
+  "javdbdiscover": {
+    "name": "JavDB探索",
+    "description": "让探索支持JavDB的数据浏览。",
+    "version": "0.1",
+    "author": "copilot",
+    "icon": "Bilibili_E.png",
+    "url": "https://github.com/chris-2s/tissue",
+    "order": 100,
+    "auth_level": 1
   }
 }
