@@ -11,7 +11,7 @@ from app.schemas import DiscoverSourceEventData
 from app.schemas.types import ChainEventType
 from app.utils.http import RequestUtils
 
-class JavdbDiscover(_PluginBase):
+class javdbdiscover(_PluginBase):
     plugin_name = "JavDB探索"
     plugin_desc = "让探索支持JavDB的数据浏览。"
     plugin_icon = "Bilibili_E.png"  # 可替换为合适的JavDB图标
