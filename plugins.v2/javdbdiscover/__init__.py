@@ -11,6 +11,8 @@ from app.schemas import DiscoverSourceEventData
 from app.schemas.types import ChainEventType
 from app.utils.http import RequestUtils
 
+__all__ = ["javdbdiscover"]
+
 class javdbdiscover(_PluginBase):
     plugin_name = "JavDB探索"
     plugin_desc = "让探索支持JavDB的数据浏览。"
@@ -155,7 +157,7 @@ class javdbdiscover(_PluginBase):
         javdb_source = schemas.DiscoverMediaSource(
             name="JavDB",
             mediaid_prefix="javdb",
-            api_path=f"plugin/JavdbDiscover/javdb_discover?apikey={settings.API_TOKEN}",
+            api_path=f"plugin/javdbdiscover/javdb_discover?apikey={settings.API_TOKEN}",
             filter_params={
                 "query": "",
             },
