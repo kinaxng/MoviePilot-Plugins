@@ -8,6 +8,7 @@ from app.plugins import _PluginBase
 from app.schemas import DiscoverSourceEventData
 from app.schemas.types import ChainEventType
 from app.utils.http import RequestUtils
+from .javdbdiscover import JavdbDiscover
 
 
 class JavdbDiscover(_PluginBase):
@@ -34,15 +35,39 @@ class JavdbDiscover(_PluginBase):
     _enabled = False
     _proxy = False
     _cookie = None
+    _javdb = None
 
     def init_plugin(self, config: dict = None):
         if config:
             self._enabled = config.get("enabled")
             self._proxy = config.get("proxy")
             self._cookie = config.get("cookie")
+            
+            # 初始化JavDB客户端
+            if self._enabled:
+                headers = {
+                    "User-Agent": "Mozilla/5.0",
+                    "Cookie": self._cookie or ""
+                }
+                self._javdb = JavdbDiscover(
+                    base_url="https://javdb.com",
+                    headers=headers
+                )
 
     def get_state(self) -> bool:
         return self._enabled
+
+    def get_api(self) -> List[Dict[str, Any]]:
+        """
+        获取插件API
+        """
+        return [{
+            "path": "/javdb_discover",
+            "endpoint": self.javdb_discover,
+            "methods": ["GET"],
+            "summary": "JavDB探索数据源",
+            "description": "获取JavDB探索数据",
+        }]
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """
@@ -116,4 +141,75 @@ class JavdbDiscover(_PluginBase):
             "enabled": False,
             "proxy": False,
             "cookie": ""
-        } 
+        }
+
+    def javdb_discover(self, apikey: str, query: str = "", page: int = 1, count: int = 30) -> List[schemas.MediaInfo]:
+        """
+        获取JavDB探索数据
+        """
+        if apikey != settings.API_TOKEN:
+            return []
+        
+        if not self._enabled or not self._javdb:
+            return []
+            
+        try:
+            # 获取页面数据
+            results = self._javdb.get_page(page=page)
+            if not results:
+                return []
+                
+            # 转换为MediaInfo格式
+            media_list = []
+            for item in results[:count]:
+                media_list.append(schemas.MediaInfo(
+                    type="番号",
+                    title=item.get('title', ''),
+                    year=None,
+                    title_year=item.get('title', ''),
+                    mediaid_prefix="javdb",
+                    media_id=item.get('id', ''),
+                    poster_path=item.get('cover', ''),
+                    vote_average=None,
+                    runtime=None,
+                    overview=item.get('info', '')
+                ))
+            return media_list
+        except Exception as e:
+            logger.error(f"获取JavDB探索数据失败: {str(e)}")
+            return []
+
+    @eventmanager.register(ChainEventType.DiscoverSource)
+    def discover_source(self, event: Event):
+        """
+        注册探索数据源
+        """
+        if not self._enabled or not self._cookie:
+            return
+            
+        event_data: DiscoverSourceEventData = event.event_data
+        javdb_source = schemas.DiscoverMediaSource(
+            name="JavDB",
+            mediaid_prefix="javdb",
+            api_path=f"plugin/JavdbDiscover/javdb_discover?apikey={settings.API_TOKEN}",
+            filter_params={
+                "query": "",
+            },
+            filter_ui=[
+                {
+                    "component": "VTextField",
+                    "props": {"model": "query", "label": "搜索关键词"}
+                }
+            ]
+        )
+        
+        if not event_data.extra_sources:
+            event_data.extra_sources = [javdb_source]
+        else:
+            event_data.extra_sources.append(javdb_source)
+
+    def stop_service(self):
+        """
+        停止服务
+        """
+        self._javdb = None 
