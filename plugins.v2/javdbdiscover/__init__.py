@@ -1,4 +1,8 @@
+import re
 from typing import Any, List, Dict, Tuple, Optional
+from urllib.parse import urljoin
+
+from cachetools import cached, TTLCache
 
 from app import schemas
 from app.core.config import settings
@@ -31,6 +35,7 @@ class JavdbDiscover(_PluginBase):
     auth_level = 1
 
     # 私有属性
+    _base_api = "https://javdb.com"
     _enabled = False
     _proxy = False
     _cookie = None
@@ -49,7 +54,15 @@ class JavdbDiscover(_PluginBase):
         pass
 
     def get_api(self) -> List[Dict[str, Any]]:
-        pass
+        return [
+            {
+                "path": "/javdb_discover",
+                "endpoint": self.javdb_discover,
+                "methods": ["GET"],
+                "summary": "JavDB探索数据源",
+                "description": "获取JavDB探索数据",
+            }
+        ]
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """
@@ -77,17 +90,219 @@ class JavdbDiscover(_PluginBase):
                                         }
                                     }
                                 ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VSwitch',
+                                        'props': {
+                                            'model': 'proxy',
+                                            'label': '使用代理服务器',
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VRow',
+                        'content': [
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12
+                                },
+                                'content': [
+                                    {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'cookie',
+                                            'label': 'Cookie',
+                                            'placeholder': '请输入JavDB的Cookie'
+                                        }
+                                    }
+                                ]
                             }
                         ]
                     }
                 ]
             }
         ], {
-            "enabled": False
+            "enabled": False,
+            "proxy": False,
+            "cookie": ""
         }
 
     def get_page(self) -> List[dict]:
         pass
+
+    @cached(cache=TTLCache(maxsize=32, ttl=1800))
+    def __request(self, path: str, **kwargs) -> str:
+        """
+        请求JavDB API
+        """
+        api_url = f"{self._base_api}/{path}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1"
+        }
+        if self._cookie:
+            headers["Cookie"] = self._cookie
+            
+        res = RequestUtils(headers=headers).get_res(
+            api_url,
+            params=kwargs,
+            proxies=settings.PROXY if self._proxy else None
+        )
+        if res is None:
+            raise Exception("无法连接JavDB，请检查网络连接！")
+        if not res.ok:
+            raise Exception(f"请求JavDB失败：{res.text}")
+        return res.text
+
+    def javdb_discover(self, 
+                       keyword: str = "",
+                       page: int = 1, 
+                       count: int = 30) -> List[schemas.MediaInfo]:
+        """
+        获取JavDB探索数据
+        """
+        if not self._enabled:
+            logger.warning("JavDB探索插件未启用")
+            return []
+        
+        if not self._cookie:
+            logger.warning("JavDB Cookie未配置，无法获取数据")
+            return []
+
+        try:
+            # 构建搜索路径
+            if keyword:
+                path = f"search?q={keyword}&f=all"
+            else:
+                path = "rankings/video_views"
+            
+            # 添加分页参数
+            if page > 1:
+                path += f"&page={page}"
+            
+            # 获取HTML内容
+            html_content = self.__request(path)
+            
+            # 解析HTML并提取影片信息
+            medias = self.__parse_html(html_content, count)
+            
+            return medias[:count]
+            
+        except Exception as e:
+            logger.error(f"获取JavDB数据失败: {str(e)}")
+            return []
+
+    def __parse_html(self, html_content: str, count: int) -> List[schemas.MediaInfo]:
+        """
+        解析HTML内容并提取影片信息
+        """
+        medias = []
+        
+        try:
+            # 使用正则表达式提取影片信息
+            # 根据JavDB的实际HTML结构调整
+            pattern = r'<div class="item">.*?<a href="([^"]+)".*?<img[^>]+src="([^"]+)"[^>]*>.*?<div class="uid">([^<]+)</div>.*?</div>'
+            matches = re.findall(pattern, html_content, re.DOTALL)
+            
+            for i, (url, image, title) in enumerate(matches):
+                if i >= count:
+                    break
+                    
+                # 构建完整URL
+                detail_url = urljoin(self._base_api, url)
+                image_url = urljoin(self._base_api, image) if not image.startswith('http') else image
+                
+                # 提取影片ID
+                video_id = url.split('/')[-1] if '/' in url else title
+                
+                media = schemas.MediaInfo(
+                    type="电影",
+                    title=title.strip(),
+                    year="",
+                    title_year=title.strip(),
+                    mediaid_prefix="javdb",
+                    media_id=video_id,
+                    poster_path=image_url,
+                    overview="",
+                    vote_average=0,
+                    release_date=""
+                )
+                medias.append(media)
+                
+        except Exception as e:
+            logger.error(f"解析JavDB HTML失败: {str(e)}")
+            
+        return medias
+
+    @staticmethod
+    def javdb_filter_ui() -> List[dict]:
+        """
+        JavDB过滤UI
+        """
+        return [
+            {
+                "component": "div",
+                "props": {"class": "flex justify-start items-center"},
+                "content": [
+                    {
+                        "component": "div",
+                        "props": {"class": "mr-5"},
+                        "content": [{"component": "VLabel", "text": "搜索"}],
+                    },
+                    {
+                        "component": "VTextField",
+                        "props": {
+                            "model": "keyword",
+                            "label": "关键词",
+                            "placeholder": "输入搜索关键词"
+                        }
+                    },
+                ],
+            }
+        ]
+
+    @eventmanager.register(ChainEventType.DiscoverSource)
+    def discover_source(self, event: Event):
+        """
+        注册探索数据源
+        """
+        if not self._enabled:
+            return
+        
+        if not self._cookie:
+            logger.warning("JavDB Cookie未配置，跳过注册探索数据源")
+            return
+
+        event_data: DiscoverSourceEventData = event.event_data
+        javdb_source = schemas.DiscoverMediaSource(
+            name="JavDB",
+            mediaid_prefix="javdb",
+            api_path=f"plugin/ExploreServices/javdb_discover?apikey={settings.API_TOKEN}",
+            filter_params={
+                "keyword": "",
+            },
+            filter_ui=self.javdb_filter_ui()
+        )
+        
+        if not event_data.extra_sources:
+            event_data.extra_sources = [javdb_source]
+        else:
+            event_data.extra_sources.append(javdb_source)
 
     def stop_service(self):
         """
