@@ -8,10 +8,10 @@ from app.plugins import _PluginBase
 from app.schemas import DiscoverSourceEventData
 from app.schemas.types import ChainEventType
 from app.utils.http import RequestUtils
-from .javdbdiscover import JavdbDiscover
+from .javdbdiscover import JavdbDiscoverClient
 
 
-class JavdbDiscover(_PluginBase):
+class JavdbDiscoverPlugin(_PluginBase):
     # 插件名称
     plugin_name = "JavDB探索"
     # 插件描述
@@ -49,7 +49,7 @@ class JavdbDiscover(_PluginBase):
                     "User-Agent": "Mozilla/5.0",
                     "Cookie": self._cookie or ""
                 }
-                self._javdb = JavdbDiscover(
+                self._javdb = JavdbDiscoverClient(
                     base_url="https://javdb.com",
                     headers=headers
                 )
