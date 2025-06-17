@@ -6,7 +6,7 @@
     "author": "copilot",
     "icon": "Bilibili_E.png",
     "url": "https://github.com/chris-2s/tissue",
-    "order": 1,
+    "order": 99,
     "auth_level": 1
   }
 }
