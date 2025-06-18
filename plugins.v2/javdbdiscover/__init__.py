@@ -1,6 +1,7 @@
 import re
 from typing import Any, List, Dict, Tuple, Optional
 from urllib.parse import urljoin
+import json
 
 from cachetools import cached, TTLCache
 
@@ -14,21 +15,21 @@ from app.schemas.types import ChainEventType
 from app.utils.http import RequestUtils
 
 
-class TvdbDiscover(_PluginBase):
+class JavdbDiscover(_PluginBase):
     # 插件名称
-    plugin_name = "TheTVDB探索"
+    plugin_name = "JavDB探索"
     # 插件描述
-    plugin_desc = "让探索支持TheTVDB的数据浏览。"
+    plugin_desc = "让探索支持JavDB的数据浏览。"
     # 插件图标
-    plugin_icon = "TheTVDB_A.png"
+    plugin_icon = "Bilibili_E.png"
     # 插件版本
-    plugin_version = "1.1"
+    plugin_version = "1.0"
     # 插件作者
-    plugin_author = "jxxghp"
+    plugin_author = "KINAXNG"
     # 作者主页
-    author_url = "https://github.com/jxxghp"
+    author_url = "https://github.com/KINAXNG"
     # 插件配置项ID前缀
-    plugin_config_prefix = "tvdbdiscover_"
+    plugin_config_prefix = "javdbdiscover_"
     # 加载顺序
     plugin_order = 99
     # 可使用的用户级别
@@ -56,19 +57,13 @@ class TvdbDiscover(_PluginBase):
     def get_api(self) -> List[Dict[str, Any]]:
         """
         获取插件API
-        [{
-            "path": "/xx",
-            "endpoint": self.xxx,
-            "methods": ["GET", "POST"],
-            "summary": "API说明"
-        }]
         """
         return [{
-            "path": "/tvdb_discover",
-            "endpoint": self.tvdb_discover,
+            "path": "/javdb_discover",
+            "endpoint": self.javdb_discover,
             "methods": ["GET"],
-            "summary": "TheTVDB探索数据源",
-            "description": "获取TheTVDB探索数据",
+            "summary": "JavDB探索数据源",
+            "description": "获取JavDB探索数据",
         }]
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
@@ -129,8 +124,8 @@ class TvdbDiscover(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'api_key',
-                                            'label': 'API Key',
-                                            'placeholder': '请输入TheTVDB的Cookie'
+                                            'label': 'Cookie',
+                                            'placeholder': '请输入JavDB的Cookie'
                                         }
                                     }
                                 ]
@@ -151,7 +146,7 @@ class TvdbDiscover(_PluginBase):
     @cached(cache=TTLCache(maxsize=32, ttl=1800))
     def __request(self, path: str, **kwargs) -> str:
         """
-        请求TheTVDB API
+        请求JavDB API
         """
         api_url = f"{self._base_api}/{path}"
         headers = {
@@ -160,7 +155,8 @@ class TvdbDiscover(_PluginBase):
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "Accept-Encoding": "gzip, deflate, br",
             "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1"
+            "Upgrade-Insecure-Requests": "1",
+            "Referer": "https://javdb.com/"
         }
         if self._api_key:
             headers["Cookie"] = self._api_key
@@ -171,40 +167,45 @@ class TvdbDiscover(_PluginBase):
             proxies=settings.PROXY if self._proxy else None
         )
         if res is None:
-            raise Exception("无法连接TheTVDB，请检查网络连接！")
+            raise Exception("无法连接JavDB，请检查网络连接！")
         if not res.ok:
-            raise Exception(f"请求TheTVDB API失败：{res.text}")
+            raise Exception(f"请求JavDB失败：{res.text}")
         return res.text
 
-    def tvdb_discover(self, apikey: str, mtype: str = "series",
-                      company: int = None, contentRating: int = None, country: str = "usa",
-                      genre: int = None, lang: str = "eng", sort: str = "score", sortType: str = "desc",
-                      status: int = None, year: int = None,
-                      page: int = 1, count: int = 30) -> List[schemas.MediaInfo]:
+    def javdb_discover(self, apikey: str, keyword: str = "", mtype: str = "all",
+                       page: int = 1, count: int = 30) -> List[schemas.MediaInfo]:
         """
-        获取TheTVDB探索数据
+        获取JavDB探索数据
         """
         if apikey != settings.API_TOKEN:
             return []
         
         if not self._enabled:
-            logger.warning("TheTVDB探索插件未启用")
+            logger.warning("JavDB探索插件未启用")
             return []
         
         if not self._api_key:
-            logger.warning("TheTVDB API Key未配置，无法获取数据")
+            logger.warning("JavDB Cookie未配置，无法获取数据")
             return []
 
         try:
-            # 构建搜索路径 - 实际使用JavDB的路径
-            if mtype == "movies":
-                path = "rankings/video_views"
+            # 构建搜索路径，参考tissue项目的实现
+            if keyword:
+                # 搜索模式
+                path = f"search?q={keyword}&f=all"
+                if page > 1:
+                    path += f"&page={page}"
             else:
-                path = "rankings/video_views"
-            
-            # 添加分页参数
-            if page > 1:
-                path += f"?page={page}"
+                # 浏览模式 - 获取热门内容
+                if mtype == "censored":
+                    path = f"?c=1&page={page}"
+                elif mtype == "uncensored":
+                    path = f"?c=2&page={page}"
+                elif mtype == "western":
+                    path = f"?c=3&page={page}"
+                else:
+                    # 默认显示最新内容
+                    path = f"?page={page}"
             
             # 获取HTML内容
             html_content = self.__request(path)
@@ -215,62 +216,70 @@ class TvdbDiscover(_PluginBase):
             return medias[:count]
             
         except Exception as e:
-            logger.error(f"获取TheTVDB数据失败: {str(e)}")
+            logger.error(f"获取JavDB数据失败: {str(e)}")
             return []
 
     def __parse_html(self, html_content: str, count: int) -> List[schemas.MediaInfo]:
         """
-        解析HTML内容并提取影片信息
+        解析HTML内容并提取影片信息，参考tissue项目的解析方式
         """
         medias = []
         
         try:
-            # 使用正则表达式提取影片信息
-            # 根据JavDB的实际HTML结构调整
-            pattern = r'<div class="item">.*?<a href="([^"]+)".*?<img[^>]+src="([^"]+)"[^>]*>.*?<div class="uid">([^<]+)</div>.*?</div>'
+            # 更精确的正则表达式，参考tissue项目的实现
+            # 匹配影片卡片
+            pattern = r'<div class="item".*?>\s*<a href="([^"]+)".*?>\s*<div class="cover".*?>\s*<img[^>]+src="([^"]+)"[^>]*>.*?</div>\s*</a>\s*<div class="meta">\s*<a href="[^"]*".*?>\s*<strong>([^<]+)</strong>'
             matches = re.findall(pattern, html_content, re.DOTALL)
+            
+            if not matches:
+                # 尝试更宽松的匹配
+                pattern = r'<div class="item">.*?<a href="([^"]+)".*?<img[^>]+src="([^"]+)"[^>]*>.*?<strong>([^<]+)</strong>'
+                matches = re.findall(pattern, html_content, re.DOTALL)
             
             for i, (url, image, title) in enumerate(matches):
                 if i >= count:
                     break
                     
                 # 构建完整URL
-                detail_url = urljoin(self._base_api, url)
+                detail_url = urljoin(self._base_api, url) if not url.startswith('http') else url
                 image_url = urljoin(self._base_api, image) if not image.startswith('http') else image
                 
                 # 提取影片ID
-                video_id = url.split('/')[-1] if '/' in url else title
+                video_id = url.split('/')[-1] if '/' in url else title.strip()
                 
-                # 伪装成TheTVDB的数据格式
+                # 清理标题
+                clean_title = title.strip()
+                
                 media = schemas.MediaInfo(
-                    type="电影" if "movies" in url else "电视剧",
-                    title=title.strip(),
+                    type="电影",
+                    title=clean_title,
                     year="",
-                    title_year=title.strip(),
-                    mediaid_prefix="tvdb",  # 伪装成tvdb
+                    title_year=clean_title,
+                    mediaid_prefix="javdb",
                     media_id=video_id,
                     poster_path=image_url,
                     overview="",
                     vote_average=0,
-                    release_date=""
+                    release_date="",
+                    detail_link=detail_url
                 )
                 medias.append(media)
                 
         except Exception as e:
-            logger.error(f"解析TheTVDB HTML失败: {str(e)}")
+            logger.error(f"解析JavDB HTML失败: {str(e)}")
             
         return medias
 
     @staticmethod
-    def tvdb_filter_ui() -> List[dict]:
+    def javdb_filter_ui() -> List[dict]:
         """
-        TheTVDB过滤UI - 简化版
+        JavDB过滤UI，参考tissue项目的分类
         """
         return [
             {
                 "component": "div",
                 "props": {
-                    "class": "flex justify-start items-center"
+                    "class": "flex justify-start items-center mb-3"
                 },
                 "content": [
                     {
@@ -296,20 +305,66 @@ class TvdbDiscover(_PluginBase):
                                 "props": {
                                     "filter": True,
                                     "tile": True,
-                                    "value": "movies"
+                                    "value": "all"
                                 },
-                                "text": "电影"
+                                "text": "全部"
                             },
                             {
                                 "component": "VChip",
                                 "props": {
                                     "filter": True,
                                     "tile": True,
-                                    "value": "series"
+                                    "value": "censored"
                                 },
-                                "text": "电视剧"
+                                "text": "有码"
+                            },
+                            {
+                                "component": "VChip",
+                                "props": {
+                                    "filter": True,
+                                    "tile": True,
+                                    "value": "uncensored"
+                                },
+                                "text": "无码"
+                            },
+                            {
+                                "component": "VChip",
+                                "props": {
+                                    "filter": True,
+                                    "tile": True,
+                                    "value": "western"
+                                },
+                                "text": "欧美"
                             }
                         ]
+                    }
+                ]
+            },
+            {
+                "component": "div",
+                "props": {
+                    "class": "flex justify-start items-center"
+                },
+                "content": [
+                    {
+                        "component": "div",
+                        "props": {
+                            "class": "mr-5"
+                        },
+                        "content": [
+                            {
+                                "component": "VLabel",
+                                "text": "搜索"
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VTextField",
+                        "props": {
+                            "model": "keyword",
+                            "label": "关键词",
+                            "placeholder": "输入搜索关键词"
+                        }
                     }
                 ]
             }
@@ -325,29 +380,21 @@ class TvdbDiscover(_PluginBase):
             
         event_data: DiscoverSourceEventData = event.event_data
         
-        # 注册TheTVDB数据源（实际是JavDB）
-        tvdb_source = schemas.DiscoverMediaSource(
-            name="TheTVDB",  # 显示名称保持TheTVDB
-            mediaid_prefix="tvdb",  # 保持tvdb前缀
-            api_path=f"plugin/TvdbDiscover/tvdb_discover?apikey={settings.API_TOKEN}",
+        # 注册JavDB数据源
+        javdb_source = schemas.DiscoverMediaSource(
+            name="JavDB",
+            mediaid_prefix="javdb",
+            api_path=f"plugin/JavdbDiscover/javdb_discover?apikey={settings.API_TOKEN}",
             filter_params={
-                "mtype": "series",
-                "company": None,
-                "contentRating": None,
-                "country": "usa",
-                "genre": None,
-                "lang": "eng",
-                "sort": "score",
-                "sortType": "desc",
-                "status": None,
-                "year": None,
+                "keyword": "",
+                "mtype": "all",
             },
-            filter_ui=self.tvdb_filter_ui()
+            filter_ui=self.javdb_filter_ui()
         )
         if not event_data.extra_sources:
-            event_data.extra_sources = [tvdb_source]
+            event_data.extra_sources = [javdb_source]
         else:
-            event_data.extra_sources.append(tvdb_source)
+            event_data.extra_sources.append(javdb_source)
 
     def stop_service(self):
         """
