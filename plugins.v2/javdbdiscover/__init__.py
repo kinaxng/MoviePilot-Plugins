@@ -197,8 +197,7 @@ class JavdbDiscover(_PluginBase):
             return []
         
         if not self._api_key:
-            logger.warning("JavDB Cookie未配置，无法获取数据")
-            return []
+            logger.warning("JavDB Cookie未配置，可能无法获取完整数据")
 
         try:
             # 构建搜索路径，参考tissue项目的实现
@@ -387,7 +386,7 @@ class JavdbDiscover(_PluginBase):
         """
         监听识别事件，注册探索数据源
         """
-        if not self._enabled or not self._api_key:
+        if not self._enabled:
             return
             
         event_data: DiscoverSourceEventData = event.event_data
