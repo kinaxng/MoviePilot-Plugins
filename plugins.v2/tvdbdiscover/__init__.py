@@ -1,4 +1,6 @@
+import re
 from typing import Any, List, Dict, Tuple, Optional
+from urllib.parse import urljoin
 
 from cachetools import cached, TTLCache
 
@@ -33,7 +35,7 @@ class TvdbDiscover(_PluginBase):
     auth_level = 1
 
     # 私有属性
-    _base_api = "https://api4.thetvdb.com/v4"
+    _base_api = "https://javdb.com"
     _enabled = False
     _proxy = False
     _api_key = None
@@ -127,7 +129,8 @@ class TvdbDiscover(_PluginBase):
                                         'component': 'VTextField',
                                         'props': {
                                             'model': 'api_key',
-                                            'label': 'API Key'
+                                            'label': 'API Key',
+                                            'placeholder': '请输入TheTVDB的Cookie'
                                         }
                                     }
                                 ]
@@ -139,45 +142,29 @@ class TvdbDiscover(_PluginBase):
         ], {
             "enabled": False,
             "proxy": False,
-            "api_key": "ed2aa66b-7899-4677-92a7-67bc9ce3d93a"
+            "api_key": ""
         }
 
     def get_page(self) -> List[dict]:
         pass
 
-    @cached(cache=TTLCache(maxsize=1, ttl=30 * 24 * 3600))
-    def __get_token(self) -> Optional[str]:
-        """
-        根据APIKEY获取token使用
-        """
-        api_url = f"{self._base_api}/login"
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "apikey": self._api_key
-        }
-        res = RequestUtils(headers=headers).post_res(
-            api_url,
-            json=data,
-            proxies=settings.PROXY if self._proxy else None
-        )
-        if not res:
-            logger.error("获取TheMovieDB token失败")
-            return None
-        return res.json().get("data", {}).get("token")
-
     @cached(cache=TTLCache(maxsize=32, ttl=1800))
-    def __request(self, mtype: str, **kwargs):
+    def __request(self, path: str, **kwargs) -> str:
         """
         请求TheTVDB API
         """
-        api_url = f"{self._base_api}/{mtype}/filter"
+        api_url = f"{self._base_api}/{path}"
         headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.__get_token()}"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1"
         }
+        if self._api_key:
+            headers["Cookie"] = self._api_key
+            
         res = RequestUtils(headers=headers).get_res(
             api_url,
             params=kwargs,
@@ -187,7 +174,7 @@ class TvdbDiscover(_PluginBase):
             raise Exception("无法连接TheTVDB，请检查网络连接！")
         if not res.ok:
             raise Exception(f"请求TheTVDB API失败：{res.text}")
-        return res.json().get("data")
+        return res.text
 
     def tvdb_discover(self, apikey: str, mtype: str = "series",
                       company: int = None, contentRating: int = None, country: str = "usa",
@@ -197,257 +184,88 @@ class TvdbDiscover(_PluginBase):
         """
         获取TheTVDB探索数据
         """
-
-        def __movie_to_media(movie_info: dict) -> schemas.MediaInfo:
-            """
-            电影数据转换为MediaInfo
-            {
-              "id": 353554,
-              "name": "I Am: Celine Dion",
-              "slug": "i-am-celine-dion",
-              "image": "/banners/v4/movie/353554/posters/6656173b5167f.jpg",
-              "nameTranslations": null,
-              "overviewTranslations": null,
-              "aliases": null,
-              "score": 22669,
-              "runtime": 102,
-              "status": {
-                "id": 5,
-                "name": "Released",
-                "recordType": "movie",
-                "keepUpdated": true
-              },
-              "lastUpdated": "2024-08-10 10:37:05",
-              "year": "2024"
-            }
-            """
-            return schemas.MediaInfo(
-                type="电影",
-                title=movie_info.get("name"),
-                year=movie_info.get("year"),
-                title_year=f"{movie_info.get('name')} ({movie_info.get('year')})",
-                mediaid_prefix="tvdb",
-                media_id=str(movie_info.get("id")),
-                poster_path=f"https://www.thetvdb.com{movie_info.get('image')}",
-                vote_average=movie_info.get("score"),
-                runtime=movie_info.get("runtime"),
-                overview=movie_info.get("overview")
-            )
-
-        def __series_to_media(series_info: dict) -> schemas.MediaInfo:
-            """
-            电视剧数据转换为MediaInfo
-            {
-              "id": 79399,
-              "name": "Who Wants to Be a Superhero?",
-              "slug": "who-wants-to-be-a-superhero",
-              "image": "https://artworks.thetvdb.com/banners/posters/79399-1.jpg",
-              "nameTranslations": null,
-              "overviewTranslations": null,
-              "aliases": null,
-              "firstAired": "2006-07-27",
-              "lastAired": "2007-09-06",
-              "nextAired": "",
-              "score": 190,
-              "status": {
-                "id": 2,
-                "name": "Ended",
-                "recordType": "series",
-                "keepUpdated": false
-              },
-              "originalCountry": "usa",
-              "originalLanguage": "eng",
-              "defaultSeasonType": 1,
-              "isOrderRandomized": false,
-              "lastUpdated": "2022-01-16 03:32:39",
-              "averageRuntime": 45,
-              "episodes": null,
-              "overview": "",
-              "year": "2006"
-            }
-            """
-            return schemas.MediaInfo(
-                type="电视剧",
-                title=series_info.get("name"),
-                year=series_info.get("year"),
-                title_year=f"{series_info.get('name')} ({series_info.get('year')})",
-                mediaid_prefix="tvdb",
-                media_id=str(series_info.get("id")),
-                release_date=series_info.get("firstAired"),
-                poster_path=series_info.get("image"),
-                vote_average=series_info.get("score"),
-                runtime=series_info.get("averageRuntime"),
-                overview=series_info.get("overview")
-            )
-
         if apikey != settings.API_TOKEN:
             return []
+        
+        if not self._enabled:
+            logger.warning("TheTVDB探索插件未启用")
+            return []
+        
+        if not self._api_key:
+            logger.warning("TheTVDB API Key未配置，无法获取数据")
+            return []
+
         try:
-            # 计算页码，TVDB为固定每页500条
-            if page * count > 500:
-                req_page = 500 // count
+            # 构建搜索路径 - 实际使用JavDB的路径
+            if mtype == "movies":
+                path = "rankings/video_views"
             else:
-                req_page = page - 1
-            result = self.__request(
-                mtype,
-                company=company,
-                contentRating=contentRating,
-                country=country,
-                genre=genre,
-                lang=lang,
-                sort=sort,
-                sortType=sortType,
-                status=status,
-                year=year,
-                page=req_page
-            )
-        except Exception as err:
-            logger.error(str(err))
+                path = "rankings/video_views"
+            
+            # 添加分页参数
+            if page > 1:
+                path += f"?page={page}"
+            
+            # 获取HTML内容
+            html_content = self.__request(path)
+            
+            # 解析HTML并提取影片信息
+            medias = self.__parse_html(html_content, count)
+            
+            return medias[:count]
+            
+        except Exception as e:
+            logger.error(f"获取TheTVDB数据失败: {str(e)}")
             return []
-        if not result:
-            return []
-        if mtype == "movies":
-            results = [__movie_to_media(movie) for movie in result]
-        else:
-            results = [__series_to_media(series) for series in result]
-        return results[(page - 1) * count:page * count]
+
+    def __parse_html(self, html_content: str, count: int) -> List[schemas.MediaInfo]:
+        """
+        解析HTML内容并提取影片信息
+        """
+        medias = []
+        
+        try:
+            # 使用正则表达式提取影片信息
+            # 根据JavDB的实际HTML结构调整
+            pattern = r'<div class="item">.*?<a href="([^"]+)".*?<img[^>]+src="([^"]+)"[^>]*>.*?<div class="uid">([^<]+)</div>.*?</div>'
+            matches = re.findall(pattern, html_content, re.DOTALL)
+            
+            for i, (url, image, title) in enumerate(matches):
+                if i >= count:
+                    break
+                    
+                # 构建完整URL
+                detail_url = urljoin(self._base_api, url)
+                image_url = urljoin(self._base_api, image) if not image.startswith('http') else image
+                
+                # 提取影片ID
+                video_id = url.split('/')[-1] if '/' in url else title
+                
+                # 伪装成TheTVDB的数据格式
+                media = schemas.MediaInfo(
+                    type="电影" if "movies" in url else "电视剧",
+                    title=title.strip(),
+                    year="",
+                    title_year=title.strip(),
+                    mediaid_prefix="tvdb",  # 伪装成tvdb
+                    media_id=video_id,
+                    poster_path=image_url,
+                    overview="",
+                    vote_average=0,
+                    release_date=""
+                )
+                medias.append(media)
+                
+        except Exception as e:
+            logger.error(f"解析TheTVDB HTML失败: {str(e)}")
+            
+        return medias
 
     @staticmethod
     def tvdb_filter_ui() -> List[dict]:
         """
-        TheTVDB过滤参数UI配置
+        TheTVDB过滤UI - 简化版
         """
-        # 国家字典
-        country_dict = {
-            "usa": "美国",
-            "chn": "中国",
-            "jpn": "日本",
-            "kor": "韩国",
-            "ind": "印度",
-            "fra": "法国",
-            "ger": "德国",
-            "ita": "意大利",
-            "esp": "西班牙",
-            "uk": "英国",
-            "aus": "澳大利亚",
-            "can": "加拿大",
-            "rus": "俄罗斯",
-            "bra": "巴西",
-            "mex": "墨西哥",
-            "arg": "阿根廷",
-            "other": "其他"
-        }
-
-        cuntry_ui = [
-            {
-                "component": "VChip",
-                "props": {
-                    "filter": True,
-                    "tile": True,
-                    "value": key
-                },
-                "text": value
-            } for key, value in country_dict.items()
-        ]
-
-        # 原始语种字典
-        lang_dict = {
-            "eng": "英语",
-            "chi": "中文",
-            "jpn": "日语",
-            "kor": "韩语",
-            "hin": "印地语",
-            "fra": "法语",
-            "deu": "德语",
-            "ita": "意大利语",
-            "spa": "西班牙语",
-            "por": "葡萄牙语",
-            "rus": "俄语",
-            "other": "其他"
-        }
-
-        lang_ui = [
-            {
-                "component": "VChip",
-                "props": {
-                    "filter": True,
-                    "tile": True,
-                    "value": key
-                },
-                "text": value
-            } for key, value in lang_dict.items()
-        ]
-
-        # 风格字典
-        genre_dict = {
-            "1": "Soap",
-            "2": "Science Fiction",
-            "3": "Reality",
-            "4": "News",
-            "5": "Mini-Series",
-            "6": "Horror",
-            "7": "Home and Garden",
-            "8": "Game Show",
-            "9": "Food",
-            "10": "Fantasy",
-            "11": "Family",
-            "12": "Drama",
-            "13": "Documentary",
-            "14": "Crime",
-            "15": "Comedy",
-            "16": "Children",
-            "17": "Animation",
-            "18": "Adventure",
-            "19": "Action",
-            "21": "Sport",
-            "22": "Suspense",
-            "23": "Talk Show",
-            "24": "Thriller",
-            "25": "Travel",
-            "26": "Western",
-            "27": "Anime",
-            "28": "Romance",
-            "29": "Musical",
-            "30": "Podcast",
-            "31": "Mystery",
-            "32": "Indie",
-            "33": "History",
-            "34": "War",
-            "35": "Martial Arts",
-            "36": "Awards Show"
-        }
-
-        genre_ui = [
-            {
-                "component": "VChip",
-                "props": {
-                    "filter": True,
-                    "tile": True,
-                    "value": key
-                },
-                "text": value
-            } for key, value in genre_dict.items()
-        ]
-
-        # 排序字典
-        sort_dict = {
-            "score": "评分",
-            "firstAired": "首播日期",
-            "name": "名称"
-        }
-
-        sort_ui = [
-            {
-                "component": "VChip",
-                "props": {
-                    "filter": True,
-                    "tile": True,
-                    "value": key
-                },
-                "text": value
-            } for key, value in sort_dict.items()
-        ]
-
         return [
             {
                 "component": "div",
@@ -494,128 +312,23 @@ class TvdbDiscover(_PluginBase):
                         ]
                     }
                 ]
-            },
-            {
-                "component": "div",
-                "props": {
-                    "class": "flex justify-start items-center"
-                },
-                "content": [
-                    {
-                        "component": "div",
-                        "props": {
-                            "class": "mr-5"
-                        },
-                        "content": [
-                            {
-                                "component": "VLabel",
-                                "text": "风格"
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VChipGroup",
-                        "props": {
-                            "model": "genre"
-                        },
-                        "content": genre_ui
-                    }
-                ]
-            },
-            {
-                "component": "div",
-                "props": {
-                    "class": "flex justify-start items-center"
-                },
-                "content": [
-                    {
-                        "component": "div",
-                        "props": {
-                            "class": "mr-5"
-                        },
-                        "content": [
-                            {
-                                "component": "VLabel",
-                                "text": "国家"
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VChipGroup",
-                        "props": {
-                            "model": "country"
-                        },
-                        "content": cuntry_ui
-                    }
-                ]
-            },
-            {
-                "component": "div",
-                "props": {
-                    "class": "flex justify-start items-center"
-                },
-                "content": [
-                    {
-                        "component": "div",
-                        "props": {
-                            "class": "mr-5"
-                        },
-                        "content": [
-                            {
-                                "component": "VLabel",
-                                "text": "语言"
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VChipGroup",
-                        "props": {
-                            "model": "lang"
-                        },
-                        "content": lang_ui
-                    }
-                ]
-            },
-            {
-                "component": "div",
-                "props": {
-                    "class": "flex justify-start items-center"
-                },
-                "content": [
-                    {
-                        "component": "div",
-                        "props": {
-                            "class": "mr-5"
-                        },
-                        "content": [
-                            {
-                                "component": "VLabel",
-                                "text": "排序"
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VChipGroup",
-                        "props": {
-                            "model": "sort"
-                        },
-                        "content": sort_ui
-                    }
-                ]
             }
         ]
 
     @eventmanager.register(ChainEventType.DiscoverSource)
     def discover_source(self, event: Event):
         """
-        监听识别事件，使用ChatGPT辅助识别名称
+        监听识别事件，注册探索数据源
         """
         if not self._enabled or not self._api_key:
             return
+            
         event_data: DiscoverSourceEventData = event.event_data
+        
+        # 注册TheTVDB数据源（实际是JavDB）
         tvdb_source = schemas.DiscoverMediaSource(
-            name="TheTVDB",
-            mediaid_prefix="tvdb",
+            name="TheTVDB",  # 显示名称保持TheTVDB
+            mediaid_prefix="tvdb",  # 保持tvdb前缀
             api_path=f"plugin/TvdbDiscover/tvdb_discover?apikey={settings.API_TOKEN}",
             filter_params={
                 "mtype": "series",

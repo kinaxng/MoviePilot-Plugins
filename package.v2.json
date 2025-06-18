@@ -1,12 +1,11 @@
 {
-  "javdbdiscover": {
-    "name": "JavDB探索",
-    "description": "让探索支持JavDB的数据浏览。",
-    "version": "0.1",
-    "author": "copilot",
-    "icon": "Bilibili_E.png",
-    "url": "https://github.com/chris-2s/tissue",
-    "order": 99,
-    "auth_level": 1
+  "TvdbDiscover": {
+    "name": "TheTVDB探索",
+    "description": "让探索支持TheTVDB的数据浏览。",
+    "labels": "探索",
+    "version": "1.1",
+    "icon": "TheTVDB_A.png",
+    "author": "jxxghp",
+    "level": 1
   }
 }
