@@ -23,7 +23,7 @@ class JavdbDiscover(_PluginBase):
     # 插件图标
     plugin_icon = "Bilibili_E.png"
     # 插件版本
-    plugin_version = "1.0"
+    plugin_version = "1.0.0"
     # 插件作者
     plugin_author = "KINAXNG"
     # 作者主页
@@ -141,6 +141,18 @@ class JavdbDiscover(_PluginBase):
         }
 
     def get_page(self) -> List[dict]:
+        pass
+
+    def get_service(self) -> List[Dict[str, Any]]:
+        """
+        注册插件公共服务
+        """
+        return []
+
+    def get_module(self) -> Dict[str, Any]:
+        """
+        获取插件模块声明，用于胁持系统模块实现（方法名：方法实现）
+        """
         pass
 
     @cached(cache=TTLCache(maxsize=32, ttl=1800))
