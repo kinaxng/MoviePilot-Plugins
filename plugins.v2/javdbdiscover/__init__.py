@@ -23,7 +23,7 @@ class JavdbDiscover(_PluginBase):
     # 插件图标
     plugin_icon = "Bilibili_E.png"
     # 插件版本
-    plugin_version = "1.3.0"
+    plugin_version = "1.3.2"
     # 插件作者
     plugin_author = "KINAXNG"
     # 作者主页
@@ -200,7 +200,12 @@ class JavdbDiscover(_PluginBase):
         """
         请求JavDB API
         """
-        api_url = f"{self._base_api}/{path}"
+        # 修复URL构建问题
+        if path.startswith('/'):
+            api_url = f"{self._base_api}{path}"
+        else:
+            api_url = f"{self._base_api}/{path}"
+            
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -212,17 +217,25 @@ class JavdbDiscover(_PluginBase):
         }
         if self._api_key:
             headers["Cookie"] = self._api_key
-            
-        res = RequestUtils(headers=headers).get_res(
-            api_url,
-            params=kwargs,
-            proxies=settings.PROXY if self._proxy else None
-        )
-        if res is None:
-            raise Exception("无法连接JavDB，请检查网络连接！")
-        if not res.ok:
-            raise Exception(f"请求JavDB失败：{res.text}")
-        return res.text
+
+        try:
+            logger.debug(f"请求JavDB URL: {api_url}")
+            res = RequestUtils(headers=headers, timeout=15).get_res(
+                api_url,
+                params=kwargs,
+                proxies=settings.PROXY if self._proxy else None
+            )
+            if res is None:
+                logger.error("JavDB请求失败：无响应")
+                return ""
+            if not res.ok:
+                logger.error(f"JavDB请求失败：状态码 {res.status_code}")
+                return ""
+            logger.debug(f"JavDB请求成功，内容长度: {len(res.text)}")
+            return res.text
+        except Exception as e:
+            logger.error(f"JavDB请求异常: {str(e)}")
+            return ""
 
     def __get_javdb_media_info(self, jav_code: str) -> Optional[schemas.MediaInfo]:
         """
@@ -519,24 +532,42 @@ class JavdbDiscover(_PluginBase):
         获取JavDB探索数据 - 增强版
         """
         if apikey != settings.API_TOKEN:
+            logger.error("JavDB探索：API令牌验证失败")
+            return []
+
+        if not self._enabled:
+            logger.warning("JavDB探索插件未启用")
             return []
 
         results = []
         try:
+            logger.info(f"JavDB探索请求：keyword='{keyword}', mtype='{mtype}', page={page}")
+            
             if keyword:
                 # 使用增强搜索功能
                 results = self.__enhanced_jav_search(keyword)
             else:
                 # 获取默认列表
-                if mtype == "latest":
-                    path = "/"
+                if mtype == "censored":
+                    path = "/?c=1"
+                elif mtype == "uncensored":
+                    path = "/?c=2"
+                elif mtype == "western":
+                    path = "/?c=3"
                 elif mtype == "ranking":
                     path = "/rankings"
                 else:
                     path = "/"
                 
+                logger.debug(f"JavDB请求路径: {path}")
                 html_content = self.__request(path)
-                results = self.__parse_html(html_content, count)
+                
+                if html_content:
+                    logger.debug(f"获取到HTML内容，长度: {len(html_content)}")
+                    results = self.__parse_html(html_content, count)
+                else:
+                    logger.warning("未获取到HTML内容")
+                    return []
 
             # 应用分页
             start_index = (page - 1) * count
@@ -556,36 +587,64 @@ class JavdbDiscover(_PluginBase):
         """
         medias = []
         try:
-            # 更精确的正则表达式来解析JavDB页面
-            pattern = r'<div class="item".*?>\s*<a href="([^"]+)".*?>\s*<div class="cover".*?>\s*<img[^>]+src="([^"]+)"[^>]*>.*?</div>\s*</a>\s*<div class="meta">\s*<a href="[^"]*".*?>\s*<strong>([^<]+)</strong>.*?</div>'
-            matches = re.findall(pattern, html_content, re.DOTALL)
+            logger.debug(f"开始解析HTML，目标数量: {count}")
+            
+            # 多种正则表达式模式，适应不同的页面结构
+            patterns = [
+                # 标准模式
+                r'<div class="item".*?>\s*<a href="([^"]+)".*?>\s*<div class="cover".*?>\s*<img[^>]+src="([^"]+)"[^>]*>.*?</div>\s*</a>\s*<div class="meta">\s*<a href="[^"]*".*?>\s*<strong>([^<]+)</strong>.*?</div>',
+                # 简化模式
+                r'<div class="item">.*?<a href="([^"]+)".*?<img[^>]+src="([^"]+)"[^>]*>.*?<strong>([^<]+)</strong>',
+                # 更宽松的模式
+                r'href="(/videos/[^"]+)".*?src="([^"]+)".*?<strong>([^<]+)</strong>',
+                # 最基本的模式
+                r'<a href="([^"]*videos[^"]*)"[^>]*>.*?<img[^>]+src="([^"]+)"[^>]*>.*?<strong>([^<]+)</strong>'
+            ]
+            
+            matches = []
+            for i, pattern in enumerate(patterns):
+                matches = re.findall(pattern, html_content, re.DOTALL | re.IGNORECASE)
+                logger.debug(f"正则模式 {i+1} 匹配到 {len(matches)} 个结果")
+                if matches:
+                    break
+            
+            if not matches:
+                logger.warning("所有正则模式都未匹配到结果")
+                # 输出HTML片段用于调试
+                snippet = html_content[:500] if html_content else "空内容"
+                logger.debug(f"HTML内容片段: {snippet}...")
+                return []
             
             for match in matches[:count]:
                 try:
                     url, image, title = match
                     
+                    # 清理和验证数据
+                    if not url or not title:
+                        continue
+                    
                     # 构建完整URL
                     detail_url = urljoin(self._base_api, url) if not url.startswith('http') else url
-                    image_url = urljoin(self._base_api, image) if not image.startswith('http') else image
+                    image_url = urljoin(self._base_api, image) if image and not image.startswith('http') else image
                     
                     # 从URL或标题中提取番号
                     jav_code = self.__extract_jav_code_from_url(url) or self.__extract_jav_code_from_title(title)
                     if not jav_code:
-                        jav_code = title.split()[0] if title else "UNKNOWN"
+                        jav_code = title.split()[0] if title else f"JAVDB{len(medias)+1}"
                     
                     # 生成伪IMDB ID
                     fake_imdb_id = self.__generate_fake_imdb_id(jav_code)
                     
-                    # 构建MediaInfo - 增强版本
+                    # 构建MediaInfo
                     media_info = schemas.MediaInfo(
                         type="电影",
                         title=title.strip(),
-                        year="",  # 年份需要从详情页获取
+                        year="",
                         title_year=title.strip(),
                         mediaid_prefix="javdb",
                         media_id=jav_code,
                         poster_path=image_url,
-                        overview="",  # 简介需要从详情页获取
+                        overview="",
                         vote_average=7.0,
                         release_date="",
                         detail_link=detail_url,
@@ -601,10 +660,13 @@ class JavdbDiscover(_PluginBase):
                     )
                     
                     medias.append(media_info)
+                    logger.debug(f"成功解析影片: {title} ({jav_code})")
                     
                 except Exception as e:
                     logger.warning(f"解析单个影片信息失败: {str(e)}")
                     continue
+            
+            logger.info(f"HTML解析完成，成功提取 {len(medias)} 个影片")
                     
         except Exception as e:
             logger.error(f"解析HTML内容失败: {str(e)}")
