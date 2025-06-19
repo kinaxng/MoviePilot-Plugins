@@ -23,7 +23,7 @@ class JavdbDiscover(_PluginBase):
     # 插件图标
     plugin_icon = "Bilibili_E.png"
     # 插件版本
-    plugin_version = "1.2.1"
+    plugin_version = "1.2.2"
     # 插件作者
     plugin_author = "KINAXNG"
     # 作者主页
@@ -583,38 +583,7 @@ class JavdbDiscover(_PluginBase):
             event_data["media_info"].append(media_info.__dict__)
             logger.info(f"成功识别JAV影片: {media_info.title}")
 
-    @eventmanager.register(ChainEventType.Recognize)
-    def recognize_enhance(self, event: Event):
-        """
-        识别增强事件监听 - 识别JAV影片
-        """
-        if not self._enabled or not self._recognize:
-            return
-            
-        # 获取事件数据
-        event_data = event.event_data
-        if not event_data:
-            return
-            
-        # 检查文件路径或名称
-        file_path = event_data.get("file_path", "")
-        file_name = event_data.get("file_name", "")
-        
-        # 检查文件名是否包含JAV番号
-        jav_code = self.__is_jav_code(file_name or file_path)
-        if not jav_code:
-            return
-            
-        logger.info(f"检测到JAV番号: {jav_code} in {file_name or file_path}")
-        
-        # 从JavDB获取影片信息
-        media_info = self.__get_javdb_media_info(jav_code)
-        if media_info:
-            # 添加到识别结果中
-            if "media_info" not in event_data:
-                event_data["media_info"] = []
-            event_data["media_info"].append(media_info.__dict__)
-            logger.info(f"成功识别JAV影片: {media_info.title}")
+
 
     @eventmanager.register(ChainEventType.DiscoverSource)
     def discover_source(self, event: Event):
