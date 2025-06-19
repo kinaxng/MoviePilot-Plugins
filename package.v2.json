@@ -3,7 +3,7 @@
     "name": "JavDB探索",
     "description": "让探索支持JavDB的数据浏览。",
     "labels": "探索",
-    "version": "1.0.0",
+            "version": "1.2.0",
     "icon": "Bilibili_E.png",
     "author": "KINAXNG",
     "level": 1
